@@ -7,7 +7,7 @@ import { createServer } from "node:http";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createFileStore, createReplayHandler } from "../dist/server.js";
+import { createFileStore, createReplayHandler } from "../src/server.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const dataDir = join(root, ".replays");

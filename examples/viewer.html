@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Replay viewer</title>
+  <link rel="stylesheet" href="/vendor/replay/style.css">
+  <script type="importmap">{ "imports": { "@rrweb/replay": "/vendor/replay/replay.js" } }</script>
+  <style>
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 16px; display: grid; gap: 12px; }
+    #stage { height: min(70vh, 720px); border: 1px solid #ddd; border-radius: 6px; background: #f6f6f6; }
+    .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    input[type=range] { flex: 1; min-width: 200px; } .muted { color: #666; } .warn { color: #a15c00; }
+  </style>
+</head>
+<body>
+  <div id="meta" class="muted">Loading…</div>
+  <div id="stage"></div>
+  <div class="bar">
+    <button id="toggle">Pause</button>
+    <button id="marker" hidden>Jump to 3s before friction</button>
+    <select id="speed"><option>1</option><option>2</option><option>4</option><option>8</option></select>
+    <input id="seek" type="range" min="0" value="0" step="100">
+    <span id="clock" class="muted">00:00 / 00:00</span>
+  </div>
+  <ul id="warnings" class="warn"></ul>
+  <script type="module">
+    import { createReplayPlayer, replayCoverage } from "/dist/player.js";
+    const WARNINGS = {
+      missing_before: "No 'before' segment received.", missing_after: "No 'after' segment yet (no changes, still recording, or upload pending).",
+      marker_out_of_range: "The friction moment lies outside the received footage.", snapshot_only: "Only a static snapshot; nothing happened on screen.",
+      short_clip: "Very short clip.",
+    };
+    const clock = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+    const id = new URLSearchParams(location.search).get("id");
+    const res = await fetch(`/api/replay/replays/${encodeURIComponent(id)}`);
+    if (!res.ok) { document.getElementById("meta").textContent = `Failed: HTTP ${res.status}`; throw new Error("load failed"); }
+    const replay = await res.json();
+    const coverage = replayCoverage(replay);
+    document.getElementById("meta").textContent = `${replay.trigger} · ${replay.path} · ${replay.parts.length} part(s) · ${(coverage.durationMs / 1000).toFixed(1)}s${replay.friction?.detail ? ` · ${replay.friction.detail}` : ""}`;
+    document.getElementById("warnings").replaceChildren(...coverage.warnings.map(w => Object.assign(document.createElement("li"), { textContent: WARNINGS[w] })));
+    if (coverage.playable) {
+      const seek = document.getElementById("seek"), toggle = document.getElementById("toggle"), marker = document.getElementById("marker");
+      const player = await createReplayPlayer(document.getElementById("stage"), replay, {
+        onTick: ms => { seek.value = String(ms); document.getElementById("clock").textContent = `${clock(ms)} / ${clock(player.totalMs)}`; },
+        onFinish: () => { toggle.textContent = "Play"; },
+      });
+      seek.max = String(player.totalMs);
+      if (player.markerMs !== null) { marker.hidden = false; marker.onclick = () => player.seekToMarker(); }
+      toggle.onclick = () => { if (player.playing) player.pause(); else player.play(); toggle.textContent = player.playing ? "Pause" : "Play"; };
+      seek.oninput = () => player.seek(Number(seek.value));
+      document.getElementById("speed").onchange = event => player.setSpeed(Number(event.target.value));
+    }
+  </script>
+</body>
+</html>

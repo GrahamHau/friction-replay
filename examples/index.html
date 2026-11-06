@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>friction-replay demo</title>
+  <script type="importmap">{ "imports": { "@rrweb/record": "/vendor/record/record.js", "@rrweb/replay": "/vendor/replay/replay.js" } }</script>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 100vh; }
+    main { padding: 24px; } aside { border-left: 1px solid #ddd; padding: 16px; background: #fafafa; }
+    button { font: inherit; padding: 6px 14px; margin: 4px 8px 4px 0; cursor: pointer; }
+    form { border: 1px solid #ddd; padding: 12px; border-radius: 6px; margin-top: 16px; max-width: 420px; }
+    input { font: inherit; padding: 4px 8px; }
+    li { margin: 6px 0; } code { background: #eee; padding: 0 4px; border-radius: 3px; }
+    @media (max-width: 720px) { body { grid-template-columns: 1fr; } aside { border-left: 0; border-top: 1px solid #ddd; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>friction-replay demo</h1>
+    <p>The page is recorded in memory only. Cause some friction, then open the replay on the right.</p>
+    <p>
+      <button id="counter">Clicked 0 times</button>
+      <button id="dead">Does nothing (dead click)</button>
+      <button id="rage">Click me 3× fast (rage click)</button>
+      <button id="api">Call failing API (HTTP 500)</button>
+      <button id="manual">Capture manually</button>
+    </p>
+    <form aria-label="Shipping address" onsubmit="return false">
+      <p>Type something here (inputs are masked), then <button type="button" id="drop">Discard form</button> to trigger <code>form_abandon</code>.</p>
+      <input name="street" placeholder="Street">
+    </form>
+    <p data-replay-block>This paragraph has <code>data-replay-block</code> and never appears in a replay.</p>
+  </main>
+  <aside>
+    <h2>Replays</h2>
+    <ol id="list"><li>None yet.</li></ol>
+  </aside>
+  <script type="module">
+    import { createReplayRecorder } from "/dist/index.js";
+    const recorder = createReplayRecorder({
+      endpoint: "/api/replay", app: "demo",
+      onFriction: event => console.info("friction", event),
+    });
+    let n = 0;
+    document.getElementById("counter").onclick = event => { event.target.textContent = `Clicked ${++n} times`; };
+    document.getElementById("rage").onclick = () => {};
+    document.getElementById("api").onclick = () => fetch("/api/orders");
+    document.getElementById("manual").onclick = () => console.info("manual replay", recorder.capture());
+    document.getElementById("drop").onclick = () => document.querySelector("form").remove();
+
+    const list = document.getElementById("list");
+    async function refresh() {
+      const rows = await fetch("/api/replay/list").then(r => r.json());
+      if (!rows.length) return;
+      list.replaceChildren(...rows.map(row => {
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.href = `/viewer?id=${encodeURIComponent(row.replayId)}`; a.target = "_blank";
+        a.textContent = `${row.trigger}${row.friction?.target ? ` · ${row.friction.target}` : ""}${row.friction?.detail ? ` · ${row.friction.detail}` : ""}`;
+        li.append(a);
+        return li;
+      }));
+    }
+    setInterval(refresh, 2000); refresh();
+  </script>
+</body>
+</html>
